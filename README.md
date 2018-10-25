@@ -4,7 +4,7 @@ This project is suitable for all WebProxy, HTTP Client, WebSocket and for others
 
 [![NuGet version](https://badge.fury.io/nu/pYove.svg)](https://badge.fury.io/nu/pYove)
 
-Nuget: https://www.nuget.org/packages/pYove/1.0.0
+Nuget: https://www.nuget.org/packages/pYove/
 
 ```sh
 Install-Package pYove -Version 1.0.0
