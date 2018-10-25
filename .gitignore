@@ -1,0 +1,12 @@
+lib
+*nuspec
+*nupkg
+nupkgs
+*.swp
+*.*~
+bin/
+obj/
+.vs/
+.vscode/
+.DS_Store
+.git/

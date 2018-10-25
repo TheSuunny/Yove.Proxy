@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+ <PropertyGroup>
+    <id>pYove</id>
+    <Version>1.0.0</Version>
+    <Authors>Sunny</Authors>
+    <Title>pYove</Title>
+    <NeutralLanguage>en-US, ru-RU</NeutralLanguage>
+    <Description>Socks4/Socks5 for IWebProxy</Description>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <PackageTags>http; webproxy; proxy; socks; socks4; socks5; .net core; .net</PackageTags>
+    <PackageIconUrl>https://raw.githubusercontent.com/TheSuunny/xYove/master/Splash.png</PackageIconUrl>
+    <PackageProjectUrl>https://github.com/TheSuunny/pYove</PackageProjectUrl>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/TheSuunny/pYove</RepositoryUrl>
+  </PropertyGroup>
+</Project>
