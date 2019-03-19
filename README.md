@@ -1,4 +1,4 @@
-# pYove Socks4/Socks5 for IWebProxy
+# Yove.Proxy Socks4/Socks5 for IWebProxy
 
 This project is suitable for all WebProxy, HTTP Client, WebSocket and for others.
 
