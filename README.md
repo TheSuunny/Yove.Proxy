@@ -18,9 +18,7 @@ dotnet add package Yove.Proxy
 # Example
 
 ```csharp
-
 new ProxyClient("138.68.161.60", 1080, ProxyType.Socks5);
-
 ```
 
 ### WebSocket
@@ -58,5 +56,3 @@ ___
 ### Other
 
 If you are missing something in the library, do not be afraid to write me :)
-
-<yove@keemail.me>
