@@ -4,13 +4,16 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace pYove
+namespace Yove.Proxy
 {
-    public class ProxyClient : IWebProxy
+    public class ProxyClient : IWebProxy, IDisposable
     {
         #region IWebProxy
 
         public ICredentials Credentials { get; set; }
+
+        public int ReadWriteTimeOut { get; set; } = 60000;
+
         public Uri GetProxy(Uri destination) => HttpProxyURL;
         public bool IsBypassed(Uri host) => false;
 
@@ -37,13 +40,16 @@ namespace pYove
 
         #endregion
 
-        public ProxyClient(string Host, int Port, ProxyType Type)
+        public ProxyClient(string Proxy, ProxyType Type)
         {
+            string Host = Proxy.Split(':')[0]?.Trim();
+            int Port = Convert.ToInt32(Proxy.Split(':')[1]?.Trim());
+
             if (string.IsNullOrEmpty(Host))
-                throw new Exception("Host null or empty");
+                throw new ArgumentNullException("Host null or empty");
 
             if (Port < 0 || Port > 65535)
-                throw new Exception("Port goes beyond");
+                throw new ArgumentOutOfRangeException("Port goes beyond");
 
             this.Host = GetHost(Host);
             this.Port = Port;
@@ -51,6 +57,28 @@ namespace pYove
 
             SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
 
+            CreateInternalServer();
+        }
+
+        public ProxyClient(string Host, int Port, ProxyType Type)
+        {
+            if (string.IsNullOrEmpty(Host))
+                throw new ArgumentNullException("Host null or empty");
+
+            if (Port < 0 || Port > 65535)
+                throw new ArgumentOutOfRangeException("Port goes beyond");
+
+            this.Host = GetHost(Host);
+            this.Port = Port;
+            this.Type = Type;
+
+            SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
+
+            CreateInternalServer();
+        }
+
+        private void CreateInternalServer()
+        {
             InternalSocketServer = CreateSocketServer();
 
             InternalSocketServer.Bind(new IPEndPoint(IPAddress.Any, 0));
@@ -62,7 +90,7 @@ namespace pYove
             InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
         }
 
-        private void AcceptCallback(IAsyncResult e)
+        private async void AcceptCallback(IAsyncResult e)
         {
             Socket Socket = InternalSocketServer.EndAccept(e);
             InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
@@ -97,7 +125,9 @@ namespace pYove
                     UriPort = URL.Port;
                 }
 
-                ConnectionResult Connection = TrySocksConnection(UriHostname, UriPort, out Socket ProxySocket);
+                Socket ProxySocket = CreateSocketServer();
+
+                ConnectionResult Connection = await TrySocksConnection(UriHostname, UriPort, ProxySocket);
 
                 if (Connection != ConnectionResult.OK)
                 {
@@ -123,20 +153,18 @@ namespace pYove
             }
         }
 
-        private ConnectionResult TrySocksConnection(string DestinationAddress, int DestinationPort, out Socket Socket)
+        private async Task<ConnectionResult> TrySocksConnection(string DestinationAddress, int DestinationPort, Socket Socket)
         {
-            Socket = CreateSocketServer();
-
             try
             {
                 Socket.Connect(new IPEndPoint(Host, Port));
 
                 if (Type == ProxyType.Socks4)
-                    return SendSocks4(Socket, DestinationAddress, DestinationPort);
+                    return await SendSocks4(Socket, DestinationAddress, DestinationPort).ConfigureAwait(false);
                 else if (Type == ProxyType.Socks5)
-                    return SendSocks5(Socket, DestinationAddress, DestinationPort);
-                else
-                    return ConnectionResult.UnknownError;
+                    return await SendSocks5(Socket, DestinationAddress, DestinationPort).ConfigureAwait(false);
+
+                return ConnectionResult.UnknownError;
             }
             catch (SocketException ex)
             {
@@ -151,7 +179,7 @@ namespace pYove
             }
         }
 
-        private ConnectionResult SendSocks4(Socket Socket, string DestinationHost, int DestinationPort)
+        private async Task<ConnectionResult> SendSocks4(Socket Socket, string DestinationHost, int DestinationPort)
         {
             byte AddressType = GetAddressType(DestinationHost);
 
@@ -174,6 +202,9 @@ namespace pYove
             byte[] Response = new byte[8];
 
             Socket.Send(Request);
+
+            await WaitStream(Socket).ConfigureAwait(false);
+
             Socket.Receive(Response);
 
             if (Response[1] != 0x5a)
@@ -182,7 +213,7 @@ namespace pYove
             return ConnectionResult.OK;
         }
 
-        private ConnectionResult SendSocks5(Socket Socket, string DestinationHost, int DestinationPort)
+        private async Task<ConnectionResult> SendSocks5(Socket Socket, string DestinationHost, int DestinationPort)
         {
             byte[] Response = new byte[255];
 
@@ -192,6 +223,9 @@ namespace pYove
             Auth[2] = (byte)0;
 
             Socket.Send(Auth);
+
+            await WaitStream(Socket).ConfigureAwait(false);
+
             Socket.Receive(Response);
 
             if (Response[1] != 0x00)
@@ -215,6 +249,9 @@ namespace pYove
             Port.CopyTo(Request, 4 + Address.Length);
 
             Socket.Send(Request);
+
+            await WaitStream(Socket).ConfigureAwait(false);
+
             Socket.Receive(Response);
 
             if (Response[1] != 0x00)
@@ -223,10 +260,31 @@ namespace pYove
             return ConnectionResult.OK;
         }
 
+        private async Task WaitStream(Socket Socket)
+        {
+            int Sleep = 0;
+            int Delay = (Socket.ReceiveTimeout < 10) ? 10 : Socket.ReceiveTimeout;
+
+            while (Socket.Available == 0)
+            {
+                if (Sleep < Delay)
+                {
+                    Sleep += 10;
+                    await Task.Delay(10).ConfigureAwait(false);
+
+                    continue;
+                }
+
+                throw new Exception($"Timeout waiting for data - {Host}:{Port}");
+            }
+        }
+
         private Socket CreateSocketServer()
         {
             Socket Socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
+
             Socket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, 0);
+            Socket.ReceiveTimeout = Socket.SendTimeout = ReadWriteTimeOut;
 
             return Socket;
         }
@@ -235,7 +293,7 @@ namespace pYove
         {
             try
             {
-                Task.Run(() => { Relay(Target, Source); });
+                Task.Run(() => Relay(Target, Source));
 
                 int Read = 0;
                 byte[] Buffer = new byte[8192];
@@ -261,7 +319,8 @@ namespace pYove
 
         private IPAddress GetHost(string Host)
         {
-            if (IPAddress.TryParse(Host, out IPAddress Ip)) return Ip;
+            if (IPAddress.TryParse(Host, out IPAddress Ip))
+                return Ip;
 
             return Dns.GetHostAddresses(Host)[0];
         }
@@ -291,8 +350,8 @@ namespace pYove
             {
                 if (Ip.AddressFamily == AddressFamily.InterNetwork)
                     return AddressTypeIPV4;
-                else
-                    return AddressTypeIPV6;
+
+                return AddressTypeIPV6;
             }
 
             return AddressTypeDomainName;
@@ -304,17 +363,10 @@ namespace pYove
 
             if (!IPAddress.TryParse(DestinationHost, out Address))
             {
-                try
-                {
-                    IPAddress[] IPs = Dns.GetHostAddresses(DestinationHost);
+                IPAddress[] IPs = Dns.GetHostAddresses(DestinationHost);
 
-                    if (IPs.Length > 0)
-                        Address = IPs[0];
-                }
-                catch (Exception ex)
-                {
-                    throw new Exception(ex.Message);
-                }
+                if (IPs.Length > 0)
+                    Address = IPs[0];
             }
 
             return Address.GetAddressBytes();
@@ -337,7 +389,23 @@ namespace pYove
                 Socket.Close();
                 Socket.Dispose();
             }
-            catch { }
+            catch
+            {
+                // Ignore
+            }
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                InternalSocketServer.Disconnect(false);
+                InternalSocketServer.Dispose();
+            }
+            catch
+            {
+                // Ignore
+            }
         }
     }
 }

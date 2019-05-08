@@ -1,4 +1,4 @@
-namespace pYove
+namespace Yove.Proxy
 {
     public enum ProxyType
     {
