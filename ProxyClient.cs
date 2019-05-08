@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Yove.Proxy
 {
-    public class ProxyClient : IWebProxy, IDisposable
+    public class ProxyClient : IWebProxy
     {
         #region IWebProxy
 
@@ -145,7 +145,7 @@ namespace Yove.Proxy
 
                 Send(Socket, $"{HttpVersion} 200 Connection established\r\n\r\n");
 
-                Relay(ProxySocket, Socket);
+                Relay(Socket, ProxySocket, false);
             }
             catch
             {
@@ -176,6 +176,34 @@ namespace Yove.Proxy
                     return ConnectionResult.ConnectionReset;
 
                 return ConnectionResult.ConnectionError;
+            }
+        }
+
+
+        private void Relay(Socket Source, Socket Target, bool IsTarget)
+        {
+            try
+            {
+                if (!IsTarget)
+                    Task.Run(() => Relay(Target, Source, true));
+
+                int Read = 0;
+                byte[] Buffer = new byte[8192];
+
+                while ((Read = Source.Receive(Buffer, 0, Buffer.Length, SocketFlags.None)) > 0)
+                    Target.Send(Buffer, 0, Read, SocketFlags.None);
+            }
+            catch
+            {
+                // Ignored
+            }
+            finally
+            {
+                if (!IsTarget)
+                {
+                    Dispose(Source);
+                    Dispose(Target);
+                }
             }
         }
 
@@ -289,29 +317,6 @@ namespace Yove.Proxy
             return Socket;
         }
 
-        private void Relay(Socket Source, Socket Target)
-        {
-            try
-            {
-                Task.Run(() => Relay(Target, Source));
-
-                int Read = 0;
-                byte[] Buffer = new byte[8192];
-
-                while ((Read = Source.Receive(Buffer, 0, Buffer.Length, SocketFlags.None)) > 0)
-                    Target.Send(Buffer, 0, Read, SocketFlags.None);
-            }
-            catch
-            {
-                // Ignored
-            }
-            finally
-            {
-                Dispose(Source);
-                Dispose(Target);
-            }
-        }
-
         private void Send(Socket Socket, string Message)
         {
             Socket.Send(Encoding.UTF8.GetBytes(Message));
@@ -388,19 +393,6 @@ namespace Yove.Proxy
             {
                 Socket.Close();
                 Socket.Dispose();
-            }
-            catch
-            {
-                // Ignore
-            }
-        }
-
-        public void Dispose()
-        {
-            try
-            {
-                InternalSocketServer.Disconnect(false);
-                InternalSocketServer.Dispose();
             }
             catch
             {
