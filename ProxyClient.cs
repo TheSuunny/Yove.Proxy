@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -125,13 +125,13 @@ namespace Yove.Proxy
                     UriPort = URL.Port;
                 }
 
-                Socket ProxySocket = CreateSocketServer();
+                Socket TargetSocket = CreateSocketServer();
 
-                ConnectionResult Connection = await TrySocksConnection(UriHostname, UriPort, ProxySocket);
+                ConnectionResult Connection = await TrySocksConnection(UriHostname, UriPort, TargetSocket);
 
                 if (Connection != ConnectionResult.OK)
                 {
-                    Dispose(ProxySocket);
+                    Dispose(TargetSocket);
 
                     if (Connection == ConnectionResult.HostUnreachable || Connection == ConnectionResult.ConnectionRefused || Connection == ConnectionResult.ConnectionReset)
                         Send(Socket, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
@@ -145,7 +145,7 @@ namespace Yove.Proxy
 
                 Send(Socket, $"{HttpVersion} 200 Connection established\r\n\r\n");
 
-                Relay(Socket, ProxySocket, false);
+                Relay(Socket, TargetSocket, false);
             }
             catch
             {
