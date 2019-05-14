@@ -6,6 +6,8 @@ This project is suitable for all WebProxy, HTTP Client, WebSocket and for others
 [![Downloads](https://img.shields.io/nuget/dt/Yove.Proxy.svg)](https://www.nuget.org/packages/Yove.Proxy)
 [![Target](https://img.shields.io/badge/.NET%20Standard-2.0-green.svg)](https://docs.microsoft.com/ru-ru/dotnet/standard/net-standard)
 
+<a href="https://www.buymeacoffee.com/SjF4B0sIy" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
+
 Nuget: https://www.nuget.org/packages/Yove.Proxy/
 
 ```sh
