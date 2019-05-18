@@ -81,12 +81,12 @@ namespace Yove.Proxy
         {
             InternalSocketServer = CreateSocketServer();
 
-            InternalSocketServer.Bind(new IPEndPoint(IPAddress.Any, 0));
+            InternalSocketServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
             InternalSocketPort = ((IPEndPoint)(InternalSocketServer.LocalEndPoint)).Port;
 
             HttpProxyURL = new Uri($"http://127.0.0.1:{InternalSocketPort}");
 
-            InternalSocketServer.Listen(8);
+            InternalSocketServer.Listen(512);
             InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
         }
 
@@ -125,13 +125,13 @@ namespace Yove.Proxy
                     UriPort = URL.Port;
                 }
 
-                Socket ProxySocket = CreateSocketServer();
+                Socket TargetSocket = CreateSocketServer();
 
-                ConnectionResult Connection = await TrySocksConnection(UriHostname, UriPort, ProxySocket);
+                ConnectionResult Connection = await TrySocksConnection(UriHostname, UriPort, TargetSocket);
 
                 if (Connection != ConnectionResult.OK)
                 {
-                    Dispose(ProxySocket);
+                    Dispose(TargetSocket);
 
                     if (Connection == ConnectionResult.HostUnreachable || Connection == ConnectionResult.ConnectionRefused || Connection == ConnectionResult.ConnectionReset)
                         Send(Socket, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
@@ -145,7 +145,7 @@ namespace Yove.Proxy
 
                 Send(Socket, $"{HttpVersion} 200 Connection established\r\n\r\n");
 
-                Relay(Socket, ProxySocket, false);
+                Relay(Socket, TargetSocket, false);
             }
             catch
             {
@@ -312,6 +312,8 @@ namespace Yove.Proxy
             Socket Socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
 
             Socket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, 0);
+            Socket.ExclusiveAddressUse = true;
+
             Socket.ReceiveTimeout = Socket.SendTimeout = ReadWriteTimeOut;
 
             return Socket;
