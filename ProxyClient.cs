@@ -97,69 +97,62 @@ namespace Yove.Proxy
             if (IsDisposed)
                 return;
 
-            try
+            Socket Socket = InternalSocketServer.EndAccept(e);
+            InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
+
+            byte[] HeaderBuffer = new byte[8192]; // Default Header size
+
+            Socket.Receive(HeaderBuffer, HeaderBuffer.Length, 0);
+
+            string Header = Encoding.ASCII.GetString(HeaderBuffer);
+
+            string HttpVersion = Header.Split(' ')[2].Split('\r')[0]?.Trim();
+            string TargetURL = Header.Split(' ')[1]?.Trim();
+
+            if (string.IsNullOrEmpty(HttpVersion) || string.IsNullOrEmpty(TargetURL))
+                throw new Exception("Unsupported request.");
+
+            string UriHostname = string.Empty;
+            int UriPort = 0;
+
+            if (TargetURL.Contains(":") && !TargetURL.Contains("http://"))
             {
-                Socket Socket = InternalSocketServer.EndAccept(e);
-                InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
+                UriHostname = TargetURL.Split(':')[0];
+                UriPort = int.Parse(TargetURL.Split(':')[1]);
+            }
+            else
+            {
+                Uri URL = new Uri(TargetURL);
 
-                byte[] HeaderBuffer = new byte[8192]; // Default Header size
+                UriHostname = URL.Host;
+                UriPort = URL.Port;
+            }
 
-                Socket.Receive(HeaderBuffer, HeaderBuffer.Length, 0);
+            Socket TargetSocket = CreateSocketServer();
 
-                string Header = Encoding.ASCII.GetString(HeaderBuffer);
+            SocketError Connection = await TrySocksConnection(UriHostname, UriPort, TargetSocket);
 
-                string HttpVersion = Header.Split(' ')[2].Split('\r')[0]?.Trim();
-                string TargetURL = Header.Split(' ')[1]?.Trim();
-
-                if (string.IsNullOrEmpty(HttpVersion) || string.IsNullOrEmpty(TargetURL))
-                    throw new Exception("Unsupported request.");
-
-                string UriHostname = string.Empty;
-                int UriPort = 0;
-
-                if (TargetURL.Contains(":") && !TargetURL.Contains("http://"))
-                {
-                    UriHostname = TargetURL.Split(':')[0];
-                    UriPort = int.Parse(TargetURL.Split(':')[1]);
-                }
+            if (Connection != SocketError.Success)
+            {
+                if (Connection == SocketError.HostUnreachable || Connection == SocketError.ConnectionRefused || Connection == SocketError.ConnectionReset)
+                    Send(Socket, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
+                else if (Connection == SocketError.AccessDenied)
+                    Send(Socket, $"{HttpVersion} 401 Unauthorized\r\n\r\n");
                 else
-                {
-                    Uri URL = new Uri(TargetURL);
+                    Send(Socket, $"{HttpVersion} 500 Internal Server Error\r\nX-Proxy-Error-Type: {Connection}\r\n\r\n");
 
-                    UriHostname = URL.Host;
-                    UriPort = URL.Port;
-                }
-
-                Socket TargetSocket = CreateSocketServer();
-
-                ConnectionResult Connection = await TrySocksConnection(UriHostname, UriPort, TargetSocket);
-
-                if (Connection != ConnectionResult.OK)
-                {
-                    Dispose(TargetSocket);
-
-                    if (Connection == ConnectionResult.HostUnreachable || Connection == ConnectionResult.ConnectionRefused || Connection == ConnectionResult.ConnectionReset)
-                        Send(Socket, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
-                    else if (Connection == ConnectionResult.AuthenticationError)
-                        Send(Socket, $"{HttpVersion} 401 Unauthorized\r\n\r\n");
-                    else
-                        Send(Socket, $"{HttpVersion} 500 Internal Server Error\r\nX-Proxy-Error-Type: {Connection}\r\n\r\n");
-
-                    throw new Exception($"Could not connect to proxy server - {Connection}");
-                }
-
+                Dispose(Socket);
+                Dispose(TargetSocket);
+            }
+            else
+            {
                 Send(Socket, $"{HttpVersion} 200 Connection established\r\n\r\n");
 
                 Relay(Socket, TargetSocket, false);
             }
-            catch (Exception ex)
-            {
-                if (ex is ObjectDisposedException == false)
-                    throw ex;
-            }
         }
 
-        private async Task<ConnectionResult> TrySocksConnection(string DestinationAddress, int DestinationPort, Socket Socket)
+        private async Task<SocketError> TrySocksConnection(string DestinationAddress, int DestinationPort, Socket Socket)
         {
             try
             {
@@ -170,18 +163,11 @@ namespace Yove.Proxy
                 else if (Type == ProxyType.Socks5)
                     return await SendSocks5(Socket, DestinationAddress, DestinationPort).ConfigureAwait(false);
 
-                return ConnectionResult.UnknownError;
+                return SocketError.ProtocolNotSupported;
             }
             catch (SocketException ex)
             {
-                if (ex.SocketErrorCode == SocketError.ConnectionRefused)
-                    return ConnectionResult.ConnectionRefused;
-                else if (ex.SocketErrorCode == SocketError.HostUnreachable)
-                    return ConnectionResult.HostUnreachable;
-                else if (ex.SocketErrorCode == SocketError.ConnectionReset)
-                    return ConnectionResult.ConnectionReset;
-
-                return ConnectionResult.ConnectionError;
+                return ex.SocketErrorCode;
             }
         }
 
@@ -212,7 +198,7 @@ namespace Yove.Proxy
             }
         }
 
-        private async Task<ConnectionResult> SendSocks4(Socket Socket, string DestinationHost, int DestinationPort)
+        private async Task<SocketError> SendSocks4(Socket Socket, string DestinationHost, int DestinationPort)
         {
             byte AddressType = GetAddressType(DestinationHost);
 
@@ -241,12 +227,12 @@ namespace Yove.Proxy
             Socket.Receive(Response);
 
             if (Response[1] != 0x5a)
-                return ConnectionResult.InvalidProxyResponse;
+                return SocketError.ConnectionRefused;
 
-            return ConnectionResult.OK;
+            return SocketError.Success;
         }
 
-        private async Task<ConnectionResult> SendSocks5(Socket Socket, string DestinationHost, int DestinationPort)
+        private async Task<SocketError> SendSocks5(Socket Socket, string DestinationHost, int DestinationPort)
         {
             byte[] Response = new byte[255];
 
@@ -262,7 +248,7 @@ namespace Yove.Proxy
             Socket.Receive(Response);
 
             if (Response[1] != 0x00)
-                return ConnectionResult.InvalidProxyResponse;
+                return SocketError.ConnectionRefused;
 
             byte AddressType = GetAddressType(DestinationHost);
 
@@ -288,9 +274,9 @@ namespace Yove.Proxy
             Socket.Receive(Response);
 
             if (Response[1] != 0x00)
-                return ConnectionResult.InvalidProxyResponse;
+                return SocketError.ConnectionRefused;
 
-            return ConnectionResult.OK;
+            return SocketError.Success;
         }
 
         private async Task WaitStream(Socket Socket)
