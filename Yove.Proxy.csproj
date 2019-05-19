@@ -4,7 +4,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <id>Yove.Proxy</id>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>Sunny</Authors>
     <Title>Yove.Proxy</Title>
     <NeutralLanguage>en-US, ru-RU</NeutralLanguage>
