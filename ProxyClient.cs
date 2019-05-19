@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Yove.Proxy
 {
-    public class ProxyClient : IWebProxy
+    public class ProxyClient : IDisposable, IWebProxy
     {
         #region IWebProxy
 
@@ -29,6 +29,8 @@ namespace Yove.Proxy
         private int Port { get; set; }
         private ProxyType Type { get; set; }
         private int SocksVersion { get; set; }
+
+        public bool IsDisposed { get; set; }
 
         #endregion
 
@@ -92,11 +94,14 @@ namespace Yove.Proxy
 
         private async void AcceptCallback(IAsyncResult e)
         {
-            Socket Socket = InternalSocketServer.EndAccept(e);
-            InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
+            if (IsDisposed)
+                return;
 
             try
             {
+                Socket Socket = InternalSocketServer.EndAccept(e);
+                InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
+
                 byte[] HeaderBuffer = new byte[8192]; // Default Header size
 
                 Socket.Receive(HeaderBuffer, HeaderBuffer.Length, 0);
@@ -147,9 +152,10 @@ namespace Yove.Proxy
 
                 Relay(Socket, TargetSocket, false);
             }
-            catch
+            catch (Exception ex)
             {
-                Dispose(Socket);
+                if (ex is ObjectDisposedException == false)
+                    throw ex;
             }
         }
 
@@ -178,7 +184,6 @@ namespace Yove.Proxy
                 return ConnectionResult.ConnectionError;
             }
         }
-
 
         private void Relay(Socket Source, Socket Target, bool IsTarget)
         {
@@ -399,6 +404,17 @@ namespace Yove.Proxy
             catch
             {
                 // Ignore
+            }
+        }
+
+        public void Dispose()
+        {
+            if (InternalSocketServer != null && !IsDisposed)
+            {
+                IsDisposed = true;
+
+                InternalSocketServer.Disconnect(false);
+                InternalSocketServer.Dispose();
             }
         }
     }
