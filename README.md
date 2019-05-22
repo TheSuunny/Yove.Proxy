@@ -59,4 +59,4 @@ ___
 
 If you are missing something in the library, do not be afraid to write me :)
 
-thesunny@tuta.io
+<thesunny@tuta.io>
