@@ -21,6 +21,9 @@ dotnet add package Yove.Proxy
 
 ```csharp
 new ProxyClient("138.68.161.60", 1080, ProxyType.Socks5);
+new ProxyClient("138.68.161.60:1080", ProxyType.Socks5);
+new ProxyClient("138.68.161.60:1080", "UserID / Username", ProxyType.Socks4);
+new ProxyClient("138.68.161.60:1080", "Username", "Password", ProxyType.Socks5);
 ```
 
 ### WebSocket

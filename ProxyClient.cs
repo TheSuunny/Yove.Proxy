@@ -27,6 +27,8 @@ namespace Yove.Proxy
 
         private IPAddress Host { get; set; }
         private int Port { get; set; }
+        private string Username { get; set; }
+        private string Password { get; set; }
         private ProxyType Type { get; set; }
         private int SocksVersion { get; set; }
 
@@ -56,8 +58,57 @@ namespace Yove.Proxy
             this.Host = GetHost(Host);
             this.Port = Port;
             this.Type = Type;
+            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
 
-            SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
+            CreateInternalServer();
+        }
+
+        public ProxyClient(string Proxy, string Username, ProxyType Type)
+        {
+            string Host = Proxy.Split(':')[0]?.Trim();
+            int Port = Convert.ToInt32(Proxy.Split(':')[1]?.Trim());
+
+            if (string.IsNullOrEmpty(Host))
+                throw new ArgumentNullException("Host null or empty");
+
+            if (Port < 0 || Port > 65535)
+                throw new ArgumentOutOfRangeException("Port goes beyond");
+
+            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
+                throw new ArgumentNullException("Username null or long");
+
+            this.Host = GetHost(Host);
+            this.Port = Port;
+            this.Type = Type;
+            this.Username = Username;
+            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
+
+            CreateInternalServer();
+        }
+
+        public ProxyClient(string Proxy, string Username, string Password, ProxyType Type)
+        {
+            string Host = Proxy.Split(':')[0]?.Trim();
+            int Port = Convert.ToInt32(Proxy.Split(':')[1]?.Trim());
+
+            if (string.IsNullOrEmpty(Host))
+                throw new ArgumentNullException("Host null or empty");
+
+            if (Port < 0 || Port > 65535)
+                throw new ArgumentOutOfRangeException("Port goes beyond");
+
+            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
+                throw new ArgumentNullException("Username null or long");
+
+            if (string.IsNullOrEmpty(Password) || Password.Length > 255)
+                throw new ArgumentNullException("Password null or long");
+
+            this.Host = GetHost(Host);
+            this.Port = Port;
+            this.Type = Type;
+            this.Username = Username;
+            this.Password = Password;
+            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
 
             CreateInternalServer();
         }
@@ -73,8 +124,51 @@ namespace Yove.Proxy
             this.Host = GetHost(Host);
             this.Port = Port;
             this.Type = Type;
+            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
 
-            SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
+            CreateInternalServer();
+        }
+
+        public ProxyClient(string Host, int Port, string Username, ProxyType Type)
+        {
+            if (string.IsNullOrEmpty(Host))
+                throw new ArgumentNullException("Host null or empty");
+
+            if (Port < 0 || Port > 65535)
+                throw new ArgumentOutOfRangeException("Port goes beyond");
+
+            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
+                throw new ArgumentNullException("Username null or long");
+
+            this.Host = GetHost(Host);
+            this.Port = Port;
+            this.Type = Type;
+            this.Username = Username;
+            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
+
+            CreateInternalServer();
+        }
+
+        public ProxyClient(string Host, int Port, string Username, string Password, ProxyType Type)
+        {
+            if (string.IsNullOrEmpty(Host))
+                throw new ArgumentNullException("Host null or empty");
+
+            if (Port < 0 || Port > 65535)
+                throw new ArgumentOutOfRangeException("Port goes beyond");
+
+            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
+                throw new ArgumentNullException("Username null or long");
+
+            if (string.IsNullOrEmpty(Password) || Password.Length > 255)
+                throw new ArgumentNullException("Password null or long");
+
+            this.Host = GetHost(Host);
+            this.Port = Port;
+            this.Type = Type;
+            this.Username = Username;
+            this.Password = Password;
+            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
 
             CreateInternalServer();
         }
@@ -207,16 +301,16 @@ namespace Yove.Proxy
 
             byte[] Address = GetIPAddressBytes(DestinationHost);
             byte[] Port = GetPortBytes(DestinationPort);
-            byte[] UserId = new byte[0];
+            byte[] UserId = string.IsNullOrEmpty(Username) ? new byte[0] : Encoding.ASCII.GetBytes(Username);
 
-            byte[] Request = new byte[9];
+            byte[] Request = new byte[9 + UserId.Length];
 
             Request[0] = (byte)SocksVersion;
             Request[1] = 0x01;
             Address.CopyTo(Request, 4);
             Port.CopyTo(Request, 2);
             UserId.CopyTo(Request, 8);
-            Request[8] = 0x00;
+            Request[8 + UserId.Length] = 0x00;
 
             byte[] Response = new byte[8];
 
@@ -239,7 +333,11 @@ namespace Yove.Proxy
             byte[] Auth = new byte[3];
             Auth[0] = (byte)SocksVersion;
             Auth[1] = (byte)1;
-            Auth[2] = (byte)0;
+
+            if (!string.IsNullOrEmpty(Username) && !string.IsNullOrEmpty(Password))
+                Auth[2] = 0x02;
+            else
+                Auth[2] = (byte)0;
 
             Socket.Send(Auth);
 
@@ -247,7 +345,9 @@ namespace Yove.Proxy
 
             Socket.Receive(Response);
 
-            if (Response[1] != 0x00)
+            if (Response[1] == 0x02)
+                await SendAuth(Socket);
+            else if (Response[1] != 0x00)
                 return SocketError.ConnectionRefused;
 
             byte AddressType = GetAddressType(DestinationHost);
@@ -264,6 +364,7 @@ namespace Yove.Proxy
             Request[1] = 0x01;
             Request[2] = 0x00;
             Request[3] = AddressType;
+
             Address.CopyTo(Request, 4);
             Port.CopyTo(Request, 4 + Address.Length);
 
@@ -277,6 +378,31 @@ namespace Yove.Proxy
                 return SocketError.ConnectionRefused;
 
             return SocketError.Success;
+        }
+
+        private async Task SendAuth(Socket Socket)
+        {
+            byte[] Uname = Encoding.ASCII.GetBytes(Username);
+            byte[] Passwd = Encoding.ASCII.GetBytes(Password);
+
+            byte[] Request = new byte[Uname.Length + Passwd.Length + 3];
+
+            Request[0] = 1;
+            Request[1] = (byte)Uname.Length;
+            Uname.CopyTo(Request, 2);
+            Request[2 + Uname.Length] = (byte)Passwd.Length;
+            Passwd.CopyTo(Request, 3 + Uname.Length);
+
+            Socket.Send(Request);
+
+            byte[] Response = new byte[2];
+
+            await WaitStream(Socket).ConfigureAwait(false);
+
+            Socket.Receive(Response);
+
+            if (Response[1] != 0x00)
+                throw new Exception("Failed authorization.");
         }
 
         private async Task WaitStream(Socket Socket)
