@@ -45,129 +45,57 @@ namespace Yove.Proxy
         #endregion
 
         public ProxyClient(string Proxy, ProxyType Type)
-        {
-            string Host = Proxy.Split(':')[0]?.Trim();
-            int Port = Convert.ToInt32(Proxy.Split(':')[1]?.Trim());
-
-            if (string.IsNullOrEmpty(Host))
-                throw new ArgumentNullException("Host null or empty");
-
-            if (Port < 0 || Port > 65535)
-                throw new ArgumentOutOfRangeException("Port goes beyond");
-
-            this.Host = GetHost(Host);
-            this.Port = Port;
-            this.Type = Type;
-            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
-
-            CreateInternalServer();
-        }
+            : this(Proxy, null, null, null, Type) { }
 
         public ProxyClient(string Proxy, string Username, ProxyType Type)
-        {
-            string Host = Proxy.Split(':')[0]?.Trim();
-            int Port = Convert.ToInt32(Proxy.Split(':')[1]?.Trim());
-
-            if (string.IsNullOrEmpty(Host))
-                throw new ArgumentNullException("Host null or empty");
-
-            if (Port < 0 || Port > 65535)
-                throw new ArgumentOutOfRangeException("Port goes beyond");
-
-            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
-                throw new ArgumentNullException("Username null or long");
-
-            this.Host = GetHost(Host);
-            this.Port = Port;
-            this.Type = Type;
-            this.Username = Username;
-            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
-
-            CreateInternalServer();
-        }
+            : this(Proxy, null, Username, null, Type) { }
 
         public ProxyClient(string Proxy, string Username, string Password, ProxyType Type)
-        {
-            string Host = Proxy.Split(':')[0]?.Trim();
-            int Port = Convert.ToInt32(Proxy.Split(':')[1]?.Trim());
-
-            if (string.IsNullOrEmpty(Host))
-                throw new ArgumentNullException("Host null or empty");
-
-            if (Port < 0 || Port > 65535)
-                throw new ArgumentOutOfRangeException("Port goes beyond");
-
-            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
-                throw new ArgumentNullException("Username null or long");
-
-            if (string.IsNullOrEmpty(Password) || Password.Length > 255)
-                throw new ArgumentNullException("Password null or long");
-
-            this.Host = GetHost(Host);
-            this.Port = Port;
-            this.Type = Type;
-            this.Username = Username;
-            this.Password = Password;
-            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
-
-            CreateInternalServer();
-        }
+            : this(Proxy, null, Username, Password, Type) { }
 
         public ProxyClient(string Host, int Port, ProxyType Type)
-        {
-            if (string.IsNullOrEmpty(Host))
-                throw new ArgumentNullException("Host null or empty");
-
-            if (Port < 0 || Port > 65535)
-                throw new ArgumentOutOfRangeException("Port goes beyond");
-
-            this.Host = GetHost(Host);
-            this.Port = Port;
-            this.Type = Type;
-            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
-
-            CreateInternalServer();
-        }
+            : this(Host, Port, null, null, Type) { }
 
         public ProxyClient(string Host, int Port, string Username, ProxyType Type)
+            : this(Host, Port, Username, null, Type) { }
+
+        public ProxyClient(string Host, int? Port, string Username, string Password, ProxyType Type)
         {
             if (string.IsNullOrEmpty(Host))
                 throw new ArgumentNullException("Host null or empty");
 
-            if (Port < 0 || Port > 65535)
-                throw new ArgumentOutOfRangeException("Port goes beyond");
+            if (Port == null && Host.Contains(":"))
+            {
+                Host = Host.Split(':')[0];
+                Port = Convert.ToInt32(Host.Split(':')[1].Trim());
 
-            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
-                throw new ArgumentNullException("Username null or long");
+                if (Port < 0 || Port > 65535)
+                    throw new ArgumentOutOfRangeException("Port goes beyond");
+            }
+            else if (Port == null && !Host.Contains(":"))
+            {
+                throw new ArgumentNullException("Incorrect host");
+            }
+
+            if (!string.IsNullOrEmpty(Username))
+            {
+                if (Username.Length > 255)
+                    throw new ArgumentNullException("Username null or long");
+
+                this.Username = Username;
+            }
+
+            if (!string.IsNullOrEmpty(Password))
+            {
+                if (Password.Length > 255)
+                    throw new ArgumentNullException("Password null or long");
+
+                this.Password = Password;
+            }
 
             this.Host = GetHost(Host);
-            this.Port = Port;
+            this.Port = Port.Value;
             this.Type = Type;
-            this.Username = Username;
-            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
-
-            CreateInternalServer();
-        }
-
-        public ProxyClient(string Host, int Port, string Username, string Password, ProxyType Type)
-        {
-            if (string.IsNullOrEmpty(Host))
-                throw new ArgumentNullException("Host null or empty");
-
-            if (Port < 0 || Port > 65535)
-                throw new ArgumentOutOfRangeException("Port goes beyond");
-
-            if (string.IsNullOrEmpty(Username) || Username.Length > 255)
-                throw new ArgumentNullException("Username null or long");
-
-            if (string.IsNullOrEmpty(Password) || Password.Length > 255)
-                throw new ArgumentNullException("Password null or long");
-
-            this.Host = GetHost(Host);
-            this.Port = Port;
-            this.Type = Type;
-            this.Username = Username;
-            this.Password = Password;
             this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
 
             CreateInternalServer();
