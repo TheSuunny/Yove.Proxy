@@ -66,8 +66,8 @@ namespace Yove.Proxy
 
             if (Port == null && Host.Contains(":"))
             {
-                Host = Host.Split(':')[0];
                 Port = Convert.ToInt32(Host.Split(':')[1].Trim());
+                Host = Host.Split(':')[0];
 
                 if (Port < 0 || Port > 65535)
                     throw new ArgumentOutOfRangeException("Port goes beyond");
