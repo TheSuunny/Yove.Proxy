@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
+using System.Net.Sockets;
 using System.Threading.Tasks;
+using System.Security.Authentication;
 
 namespace Yove.Proxy
 {
@@ -12,18 +13,22 @@ namespace Yove.Proxy
 
         public ICredentials Credentials { get; set; }
 
-        public int ReadWriteTimeOut { get; set; } = 60000;
+        public int ReadWriteTimeOut { get; set; } = 30000;
 
-        public Uri GetProxy(Uri destination) => HttpProxyURL;
+        public Uri GetProxy(Uri destination) => InternalUri;
         public bool IsBypassed(Uri host) => false;
 
         #endregion
 
-        #region ProxyClient
+        #region Internal Server
 
-        private Uri HttpProxyURL { get; set; }
-        private Socket InternalSocketServer { get; set; }
-        private int InternalSocketPort { get; set; }
+        private Uri InternalUri { get; set; }
+        private Socket InternalServer { get; set; }
+        private int InternalPort { get; set; }
+
+        #endregion
+
+        #region ProxyClient
 
         private IPAddress Host { get; set; }
         private int Port { get; set; }
@@ -36,13 +41,9 @@ namespace Yove.Proxy
 
         #endregion
 
-        #region Constants
-
         private const byte AddressTypeIPV4 = 0x01;
         private const byte AddressTypeIPV6 = 0x04;
         private const byte AddressTypeDomainName = 0x03;
-
-        #endregion
 
         public ProxyClient(string Proxy, ProxyType Type)
             : this(Proxy, null, null, null, Type) { }
@@ -61,6 +62,12 @@ namespace Yove.Proxy
 
         public ProxyClient(string Host, int? Port, string Username, string Password, ProxyType Type)
         {
+            if (Type == ProxyType.Http)
+            {
+                InternalUri = new Uri($"http://{Host}:{Port}");
+                return;
+            }
+
             if (string.IsNullOrEmpty(Host))
                 throw new ArgumentNullException("Host null or empty");
 
@@ -101,30 +108,47 @@ namespace Yove.Proxy
             CreateInternalServer();
         }
 
-        private void CreateInternalServer()
+        private async void CreateInternalServer()
         {
-            InternalSocketServer = CreateSocketServer();
+            InternalServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            {
+                ReceiveTimeout = ReadWriteTimeOut,
+                SendTimeout = ReadWriteTimeOut,
+                ExclusiveAddressUse = true
+            };
 
-            InternalSocketServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-            InternalSocketPort = ((IPEndPoint)(InternalSocketServer.LocalEndPoint)).Port;
+            InternalServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
 
-            HttpProxyURL = new Uri($"http://127.0.0.1:{InternalSocketPort}");
+            InternalPort = ((IPEndPoint)(InternalServer.LocalEndPoint)).Port;
+            InternalUri = new Uri($"http://127.0.0.1:{InternalPort}");
 
-            InternalSocketServer.Listen(512);
-            InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
+            InternalServer.Listen(512);
+
+            while (!IsDisposed)
+            {
+                try
+                {
+                    using (Socket InternalClient = await InternalServer?.AcceptAsync())
+                    {
+                        if (InternalClient != null)
+                            await HandleClient(InternalClient);
+                    }
+                }
+                catch
+                {
+                    //? Ignore dispose intrnal server
+                }
+            }
         }
 
-        private async void AcceptCallback(IAsyncResult e)
+        private async Task HandleClient(Socket InternalClient)
         {
             if (IsDisposed)
                 return;
 
-            Socket Socket = InternalSocketServer.EndAccept(e);
-            InternalSocketServer.BeginAccept(new AsyncCallback(AcceptCallback), null);
+            byte[] HeaderBuffer = new byte[8192];
 
-            byte[] HeaderBuffer = new byte[8192]; // Default Header size
-
-            Socket.Receive(HeaderBuffer, HeaderBuffer.Length, 0);
+            InternalClient.Receive(HeaderBuffer, HeaderBuffer.Length, 0);
 
             string Header = Encoding.ASCII.GetString(HeaderBuffer);
 
@@ -132,64 +156,63 @@ namespace Yove.Proxy
             string TargetURL = Header.Split(' ')[1]?.Trim();
 
             if (string.IsNullOrEmpty(HttpVersion) || string.IsNullOrEmpty(TargetURL))
-                throw new Exception("Unsupported request.");
+                return;
 
-            string UriHostname = string.Empty;
-            int UriPort = 0;
+            string TargetHostname = string.Empty;
+            int TargetPort = 0;
 
             if (TargetURL.Contains(":") && !TargetURL.Contains("http://"))
             {
-                UriHostname = TargetURL.Split(':')[0];
-                UriPort = int.Parse(TargetURL.Split(':')[1]);
+                TargetHostname = TargetURL.Split(':')[0];
+                TargetPort = int.Parse(TargetURL.Split(':')[1]);
             }
             else
             {
                 Uri URL = new Uri(TargetURL);
 
-                UriHostname = URL.Host;
-                UriPort = URL.Port;
+                TargetHostname = URL.Host;
+                TargetPort = URL.Port;
             }
 
-            Socket TargetSocket = CreateSocketServer();
-
-            SocketError Connection = await TrySocksConnection(UriHostname, UriPort, TargetSocket);
-
-            if (Connection != SocketError.Success)
+            using (Socket TargetClient = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
             {
-                if (Connection == SocketError.HostUnreachable || Connection == SocketError.ConnectionRefused || Connection == SocketError.ConnectionReset)
-                    Send(Socket, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
-                else if (Connection == SocketError.AccessDenied)
-                    Send(Socket, $"{HttpVersion} 401 Unauthorized\r\n\r\n");
-                else
-                    Send(Socket, $"{HttpVersion} 500 Internal Server Error\r\nX-Proxy-Error-Type: {Connection}\r\n\r\n");
-
-                Dispose(Socket);
-                Dispose(TargetSocket);
-            }
-            else
+                ReceiveTimeout = ReadWriteTimeOut,
+                SendTimeout = ReadWriteTimeOut,
+                ExclusiveAddressUse = true
+            })
             {
-                Send(Socket, $"{HttpVersion} 200 Connection established\r\n\r\n");
+                try
+                {
+                    TargetClient.Connect(new IPEndPoint(Host, Port));
 
-                Relay(Socket, TargetSocket, false);
-            }
-        }
+                    SocketError Connection = Type == ProxyType.Socks4 ?
+                        await SendSocks4(TargetClient, TargetHostname, TargetPort) :
+                        await SendSocks5(TargetClient, TargetHostname, TargetPort);
 
-        private async Task<SocketError> TrySocksConnection(string DestinationAddress, int DestinationPort, Socket Socket)
-        {
-            try
-            {
-                Socket.Connect(new IPEndPoint(Host, Port));
+                    if (Connection != SocketError.Success)
+                    {
+                        if (Connection == SocketError.HostUnreachable || Connection == SocketError.ConnectionRefused || Connection == SocketError.ConnectionReset)
+                            SendMessage(InternalClient, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
+                        else if (Connection == SocketError.AccessDenied)
+                            SendMessage(InternalClient, $"{HttpVersion} 401 Unauthorized\r\n\r\n");
+                        else
+                            SendMessage(InternalClient, $"{HttpVersion} 500 Internal Server Error\r\nX-Proxy-Error-Type: {Connection}\r\n\r\n");
+                    }
+                    else
+                    {
+                        SendMessage(InternalClient, $"{HttpVersion} 200 Connection established\r\n\r\n");
 
-                if (Type == ProxyType.Socks4)
-                    return await SendSocks4(Socket, DestinationAddress, DestinationPort).ConfigureAwait(false);
-                else if (Type == ProxyType.Socks5)
-                    return await SendSocks5(Socket, DestinationAddress, DestinationPort).ConfigureAwait(false);
-
-                return SocketError.ProtocolNotSupported;
-            }
-            catch (SocketException ex)
-            {
-                return ex.SocketErrorCode;
+                        Relay(InternalClient, TargetClient, false);
+                    }
+                }
+                catch (AuthenticationException)
+                {
+                    SendMessage(InternalClient, $"{HttpVersion} 511 Network Authentication Required\r\n\r\n");
+                }
+                catch
+                {
+                    SendMessage(InternalClient, $"{HttpVersion} 408 Request Timeout\r\n\r\n");
+                }
             }
         }
 
@@ -200,23 +223,21 @@ namespace Yove.Proxy
                 if (!IsTarget)
                     Task.Run(() => Relay(Target, Source, true));
 
-                int Read = 0;
-                byte[] Buffer = new byte[8192];
+                while (true)
+                {
+                    byte[] Buffer = new byte[8192];
 
-                while ((Read = Source.Receive(Buffer, 0, Buffer.Length, SocketFlags.None)) > 0)
+                    int Read = Source.Receive(Buffer, 0, Buffer.Length, SocketFlags.None);
+
+                    if (Read == 0)
+                        break;
+
                     Target.Send(Buffer, 0, Read, SocketFlags.None);
+                }
             }
             catch
             {
-                // Ignored
-            }
-            finally
-            {
-                if (!IsTarget)
-                {
-                    Dispose(Source);
-                    Dispose(Target);
-                }
+                //? Ignore timeout exception
             }
         }
 
@@ -244,7 +265,7 @@ namespace Yove.Proxy
 
             Socket.Send(Request);
 
-            await WaitStream(Socket).ConfigureAwait(false);
+            await WaitStream(Socket);
 
             Socket.Receive(Response);
 
@@ -269,7 +290,7 @@ namespace Yove.Proxy
 
             Socket.Send(Auth);
 
-            await WaitStream(Socket).ConfigureAwait(false);
+            await WaitStream(Socket);
 
             Socket.Receive(Response);
 
@@ -298,7 +319,7 @@ namespace Yove.Proxy
 
             Socket.Send(Request);
 
-            await WaitStream(Socket).ConfigureAwait(false);
+            await WaitStream(Socket);
 
             Socket.Receive(Response);
 
@@ -325,12 +346,12 @@ namespace Yove.Proxy
 
             byte[] Response = new byte[2];
 
-            await WaitStream(Socket).ConfigureAwait(false);
+            await WaitStream(Socket);
 
             Socket.Receive(Response);
 
             if (Response[1] != 0x00)
-                throw new Exception("Failed authorization.");
+                throw new AuthenticationException();
         }
 
         private async Task WaitStream(Socket Socket)
@@ -343,30 +364,18 @@ namespace Yove.Proxy
                 if (Sleep < Delay)
                 {
                     Sleep += 10;
-                    await Task.Delay(10).ConfigureAwait(false);
+                    await Task.Delay(10);
 
                     continue;
                 }
 
-                throw new Exception($"Timeout waiting for data - {Host}:{Port}");
+                throw new TimeoutException();
             }
         }
 
-        private Socket CreateSocketServer()
+        private void SendMessage(Socket Client, string Message)
         {
-            Socket Socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
-
-            Socket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, 0);
-            Socket.ExclusiveAddressUse = true;
-
-            Socket.ReceiveTimeout = Socket.SendTimeout = ReadWriteTimeOut;
-
-            return Socket;
-        }
-
-        private void Send(Socket Socket, string Message)
-        {
-            Socket.Send(Encoding.UTF8.GetBytes(Message));
+            Client.Send(Encoding.UTF8.GetBytes(Message));
         }
 
         private IPAddress GetHost(string Host)
@@ -434,28 +443,16 @@ namespace Yove.Proxy
             return ArrayBytes;
         }
 
-        private void Dispose(Socket Socket)
-        {
-            try
-            {
-                Socket.Close();
-                Socket.Dispose();
-            }
-            catch
-            {
-                // Ignore
-            }
-        }
-
         public void Dispose()
         {
-            if (InternalSocketServer != null && !IsDisposed)
-            {
-                IsDisposed = true;
+            IsDisposed = true;
 
-                InternalSocketServer.Disconnect(false);
-                InternalSocketServer.Dispose();
-            }
+            if (InternalServer != null && InternalServer.Connected)
+                InternalServer.Disconnect(false);
+
+            InternalServer?.Dispose();
+
+            InternalServer = null;
         }
     }
 }

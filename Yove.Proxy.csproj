@@ -12,14 +12,13 @@
 
   <PropertyGroup>
     <id>Yove.Proxy</id>
-    <Version>1.0.6</Version>
+    <Version>1.1.0</Version>
     <Authors>Sunny</Authors>
     <Title>Yove.Proxy</Title>
     <NeutralLanguage>en-US, ru-RU</NeutralLanguage>
     <Description>Socks4/Socks5 for IWebProxy</Description>
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <PackageTags>http; webproxy; proxy; socks; socks4; socks5; .net core; .net</PackageTags>
-    <PackageIconUrl>https://raw.githubusercontent.com/TheSuunny/xYove/master/Splash.png</PackageIconUrl>
     <PackageProjectUrl>https://github.com/TheSuunny/Yove.Proxy</PackageProjectUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <RepositoryType>git</RepositoryType>

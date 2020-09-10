@@ -1,4 +1,4 @@
-# Yove.Proxy Socks4/Socks5 for IWebProxy
+# Yove.Proxy | Socks4/Socks5 for IWebProxy
 
 This project is suitable for all WebProxy, HTTP Client, WebSocket and for others.
 
@@ -13,6 +13,7 @@ Nuget: https://www.nuget.org/packages/Yove.Proxy/
 ```sh
 Install-Package Yove.Proxy
 ```
+
 ```sh
 dotnet add package Yove.Proxy
 ```
@@ -29,34 +30,50 @@ new ProxyClient("138.68.161.60:1080", "Username", "Password", ProxyType.Socks5);
 ### WebSocket
 
 ```csharp
-ClientWebSocket WebSocket = new ClientWebSocket
+using (ProxyClient Proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Socks5)
 {
-    Options.Proxy = new ProxyClient("138.68.161.60", 1080, ProxyType.Socks4)
-};
+    ReadWriteTimeOut = 10000
+})
+{
+    ClientWebSocket WebSocket = new ClientWebSocket
+    {
+        Options.Proxy = Proxy
+    };
 
-await WebSocket.ConnectAsync(new Uri("wss://echo.websocket.org"), TokenSource.Token);
+    await WebSocket.ConnectAsync(new Uri("wss://echo.websocket.org"), TokenSource.Token);
+}
 ```
 
 ### HttpClient
 
 ```csharp
-HttpClientHandler Handler = new HttpClientHandler
+using (ProxyClient Proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Socks4)
 {
-    Proxy = new ProxyClient("138.68.161.60", 1080, ProxyType.Socks4),
-    Proxy = new ProxyClient("159.224.243.185:61303", ProxyType.Socks4)
+    ReadWriteTimeOut = 10000
+})
+{
+    HttpClientHandler Handler = new HttpClientHandler { Proxy = Proxy };
+    HttpClient Client = new HttpClient(Handler);
+
+    try
     {
-        ReadWriteTimeOut = 30000 // 30 seconds [Default 60 seconds]
+        string Response = await Client.GetStringAsync("https://api.ipify.org/?format=json");
+
+        Console.WriteLine(Response);
     }
-};
-
-using (HttpClient Client = new HttpClient(Handler))
-{
-    string Response = await Client.GetStringAsync("https://api.ipify.org/?format=json");
-
-    Console.WriteLine(Response);
+    catch (Exception ex)
+    {
+        Console.WriteLine(ex);
+    }
+    finally
+    {
+        Handler.Dispose();
+        Client.Dispose();
+    }
 }
 ```
-___
+
+---
 
 ### Other
 
