@@ -183,7 +183,11 @@ namespace Yove.Proxy
             {
                 try
                 {
-                    TargetClient.Connect(new IPEndPoint(Host, Port));
+                    if (!TargetClient.ConnectAsync(Host, Port).Wait(ReadWriteTimeOut) || !TargetClient.Connected)
+                    {
+                        SendMessage(InternalClient, $"{HttpVersion} 408 Request Timeout\r\n\r\n");
+                        return;
+                    }
 
                     SocketError Connection = Type == ProxyType.Socks4 ?
                         await SendSocks4(TargetClient, TargetHostname, TargetPort) :
@@ -445,14 +449,24 @@ namespace Yove.Proxy
 
         public void Dispose()
         {
-            IsDisposed = true;
+            if (!IsDisposed)
+            {
+                IsDisposed = true;
 
-            if (InternalServer != null && InternalServer.Connected)
-                InternalServer.Disconnect(false);
+                if (InternalServer != null && InternalServer.Connected)
+                    InternalServer.Disconnect(false);
 
-            InternalServer?.Dispose();
+                InternalServer?.Dispose();
 
-            InternalServer = null;
+                InternalServer = null;
+            }
+        }
+
+        ~ProxyClient()
+        {
+            Dispose();
+
+            GC.SuppressFinalize(this);
         }
     }
 }

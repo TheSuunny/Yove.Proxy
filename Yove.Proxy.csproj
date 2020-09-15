@@ -12,7 +12,7 @@
 
   <PropertyGroup>
     <id>Yove.Proxy</id>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>Sunny</Authors>
     <Title>Yove.Proxy</Title>
     <NeutralLanguage>en-US, ru-RU</NeutralLanguage>
