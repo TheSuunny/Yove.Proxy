@@ -15,27 +15,27 @@ namespace Yove.Proxy
 
         public int ReadWriteTimeOut { get; set; } = 30000;
 
-        public Uri GetProxy(Uri destination) => InternalUri;
+        public Uri GetProxy(Uri destination) => _internalUri;
         public bool IsBypassed(Uri host) => false;
 
         #endregion
 
         #region Internal Server
 
-        private Uri InternalUri { get; set; }
-        private Socket InternalServer { get; set; }
-        private int InternalPort { get; set; }
+        private Uri _internalUri { get; set; }
+        private Socket _internalServer { get; set; }
+        private int _internalPort { get; set; }
 
         #endregion
 
         #region ProxyClient
 
-        private IPAddress Host { get; set; }
-        private int Port { get; set; }
-        private string Username { get; set; }
-        private string Password { get; set; }
-        private ProxyType Type { get; set; }
-        private int SocksVersion { get; set; }
+        private IPAddress _host { get; set; }
+        private int _port { get; set; }
+        private string _username { get; set; }
+        private string _password { get; set; }
+        private ProxyType _type { get; set; }
+        private int _socksVersion { get; set; }
 
         public bool IsDisposed { get; set; }
 
@@ -45,136 +45,136 @@ namespace Yove.Proxy
         private const byte AddressTypeIPV6 = 0x04;
         private const byte AddressTypeDomainName = 0x03;
 
-        public ProxyClient(string Proxy, ProxyType Type)
-            : this(Proxy, null, null, null, Type) { }
+        public ProxyClient(string proxy, ProxyType type)
+            : this(proxy, null, null, null, type) { }
 
-        public ProxyClient(string Proxy, string Username, ProxyType Type)
-            : this(Proxy, null, Username, null, Type) { }
+        public ProxyClient(string proxy, string username, ProxyType type)
+            : this(proxy, null, username, null, type) { }
 
-        public ProxyClient(string Proxy, string Username, string Password, ProxyType Type)
-            : this(Proxy, null, Username, Password, Type) { }
+        public ProxyClient(string proxy, string username, string password, ProxyType type)
+            : this(proxy, null, username, password, type) { }
 
-        public ProxyClient(string Host, int Port, ProxyType Type)
-            : this(Host, Port, null, null, Type) { }
+        public ProxyClient(string host, int port, ProxyType type)
+            : this(host, port, null, null, type) { }
 
-        public ProxyClient(string Host, int Port, string Username, ProxyType Type)
-            : this(Host, Port, Username, null, Type) { }
+        public ProxyClient(string host, int port, string username, ProxyType type)
+            : this(host, port, username, null, type) { }
 
-        public ProxyClient(string Host, int? Port, string Username, string Password, ProxyType Type)
+        public ProxyClient(string host, int? port, string username, string password, ProxyType type)
         {
-            if (Type == ProxyType.Http)
+            if (type == ProxyType.Http)
             {
-                InternalUri = new Uri($"http://{Host}:{Port}");
+                _internalUri = new Uri($"http://{host}:{port}");
                 return;
             }
 
-            if (string.IsNullOrEmpty(Host))
+            if (string.IsNullOrEmpty(host))
                 throw new ArgumentNullException("Host null or empty");
 
-            if (Port == null && Host.Contains(":"))
+            if (port == null && host.Contains(":"))
             {
-                Port = Convert.ToInt32(Host.Split(':')[1].Trim());
-                Host = Host.Split(':')[0];
+                port = Convert.ToInt32(host.Split(':')[1].Trim());
+                host = host.Split(':')[0];
 
-                if (Port < 0 || Port > 65535)
+                if (port < 0 || port > 65535)
                     throw new ArgumentOutOfRangeException("Port goes beyond");
             }
-            else if (Port == null && !Host.Contains(":"))
+            else if (port == null && !host.Contains(":"))
             {
                 throw new ArgumentNullException("Incorrect host");
             }
 
-            if (!string.IsNullOrEmpty(Username))
+            if (!string.IsNullOrEmpty(username))
             {
-                if (Username.Length > 255)
+                if (username.Length > 255)
                     throw new ArgumentNullException("Username null or long");
 
-                this.Username = Username;
+                _username = username;
             }
 
-            if (!string.IsNullOrEmpty(Password))
+            if (!string.IsNullOrEmpty(password))
             {
-                if (Password.Length > 255)
+                if (password.Length > 255)
                     throw new ArgumentNullException("Password null or long");
 
-                this.Password = Password;
+                _password = password;
             }
 
-            this.Host = GetHost(Host);
-            this.Port = Port.Value;
-            this.Type = Type;
-            this.SocksVersion = (Type == ProxyType.Socks4) ? 4 : 5;
+            _host = GetHost(host);
+            _port = port.Value;
+            _type = type;
+            _socksVersion = (type == ProxyType.Socks4) ? 4 : 5;
 
             CreateInternalServer();
         }
 
         private async void CreateInternalServer()
         {
-            InternalServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            _internalServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
             {
                 ReceiveTimeout = ReadWriteTimeOut,
                 SendTimeout = ReadWriteTimeOut,
                 ExclusiveAddressUse = true
             };
 
-            InternalServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            _internalServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
 
-            InternalPort = ((IPEndPoint)(InternalServer.LocalEndPoint)).Port;
-            InternalUri = new Uri($"http://127.0.0.1:{InternalPort}");
+            _internalPort = ((IPEndPoint)(_internalServer.LocalEndPoint)).Port;
+            _internalUri = new Uri($"http://127.0.0.1:{_internalPort}");
 
-            InternalServer.Listen(512);
+            _internalServer.Listen(512);
 
             while (!IsDisposed)
             {
                 try
                 {
-                    using (Socket InternalClient = await InternalServer?.AcceptAsync())
+                    using (Socket internalClient = await _internalServer?.AcceptAsync())
                     {
-                        if (InternalClient != null)
-                            await HandleClient(InternalClient);
+                        if (internalClient != null)
+                            await HandleClient(internalClient);
                     }
                 }
                 catch
                 {
-                    //? Ignore dispose intrnal server
+                    //? Ignore dispose internal server
                 }
             }
         }
 
-        private async Task HandleClient(Socket InternalClient)
+        private async Task HandleClient(Socket internalClient)
         {
             if (IsDisposed)
                 return;
 
-            byte[] HeaderBuffer = new byte[8192];
+            byte[] headerBuffer = new byte[8192];
 
-            InternalClient.Receive(HeaderBuffer, HeaderBuffer.Length, 0);
+            internalClient.Receive(headerBuffer, headerBuffer.Length, 0);
 
-            string Header = Encoding.ASCII.GetString(HeaderBuffer);
+            string header = Encoding.ASCII.GetString(headerBuffer);
 
-            string HttpVersion = Header.Split(' ')[2].Split('\r')[0]?.Trim();
-            string TargetURL = Header.Split(' ')[1]?.Trim();
+            string httpVersion = header.Split(' ')[2].Split('\r')[0]?.Trim();
+            string targetURL = header.Split(' ')[1]?.Trim();
 
-            if (string.IsNullOrEmpty(HttpVersion) || string.IsNullOrEmpty(TargetURL))
+            if (string.IsNullOrEmpty(httpVersion) || string.IsNullOrEmpty(targetURL))
                 return;
 
-            string TargetHostname = string.Empty;
-            int TargetPort = 0;
+            string targetHostname = string.Empty;
+            int targetPort = 0;
 
-            if (TargetURL.Contains(":") && !TargetURL.Contains("http://"))
+            if (targetURL.Contains(":") && !targetURL.Contains("http://"))
             {
-                TargetHostname = TargetURL.Split(':')[0];
-                TargetPort = int.Parse(TargetURL.Split(':')[1]);
+                targetHostname = targetURL.Split(':')[0];
+                targetPort = int.Parse(targetURL.Split(':')[1]);
             }
             else
             {
-                Uri URL = new Uri(TargetURL);
+                Uri uri = new Uri(targetURL);
 
-                TargetHostname = URL.Host;
-                TargetPort = URL.Port;
+                targetHostname = uri.Host;
+                targetPort = uri.Port;
             }
 
-            using (Socket TargetClient = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            using (Socket targetClient = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
             {
                 ReceiveTimeout = ReadWriteTimeOut,
                 SendTimeout = ReadWriteTimeOut,
@@ -183,60 +183,60 @@ namespace Yove.Proxy
             {
                 try
                 {
-                    if (!TargetClient.ConnectAsync(Host, Port).Wait(ReadWriteTimeOut) || !TargetClient.Connected)
+                    if (!targetClient.ConnectAsync(_host, _port).Wait(ReadWriteTimeOut) || !targetClient.Connected)
                     {
-                        SendMessage(InternalClient, $"{HttpVersion} 408 Request Timeout\r\n\r\n");
+                        SendMessage(internalClient, $"{httpVersion} 408 Request Timeout\r\n\r\n");
                         return;
                     }
 
-                    SocketError Connection = Type == ProxyType.Socks4 ?
-                        await SendSocks4(TargetClient, TargetHostname, TargetPort) :
-                        await SendSocks5(TargetClient, TargetHostname, TargetPort);
+                    SocketError connection = _type == ProxyType.Socks4 ?
+                        await SendSocks4(targetClient, targetHostname, targetPort) :
+                        await SendSocks5(targetClient, targetHostname, targetPort);
 
-                    if (Connection != SocketError.Success)
+                    if (connection != SocketError.Success)
                     {
-                        if (Connection == SocketError.HostUnreachable || Connection == SocketError.ConnectionRefused || Connection == SocketError.ConnectionReset)
-                            SendMessage(InternalClient, $"{HttpVersion} 502 Bad Gateway\r\n\r\n");
-                        else if (Connection == SocketError.AccessDenied)
-                            SendMessage(InternalClient, $"{HttpVersion} 401 Unauthorized\r\n\r\n");
+                        if (connection == SocketError.HostUnreachable || connection == SocketError.ConnectionRefused || connection == SocketError.ConnectionReset)
+                            SendMessage(internalClient, $"{httpVersion} 502 Bad Gateway\r\n\r\n");
+                        else if (connection == SocketError.AccessDenied)
+                            SendMessage(internalClient, $"{httpVersion} 401 Unauthorized\r\n\r\n");
                         else
-                            SendMessage(InternalClient, $"{HttpVersion} 500 Internal Server Error\r\nX-Proxy-Error-Type: {Connection}\r\n\r\n");
+                            SendMessage(internalClient, $"{httpVersion} 500 Internal Server Error\r\nX-Proxy-Error-Type: {connection}\r\n\r\n");
                     }
                     else
                     {
-                        SendMessage(InternalClient, $"{HttpVersion} 200 Connection established\r\n\r\n");
+                        SendMessage(internalClient, $"{httpVersion} 200 Connection established\r\n\r\n");
 
-                        Relay(InternalClient, TargetClient, false);
+                        Relay(internalClient, targetClient, false);
                     }
                 }
                 catch (AuthenticationException)
                 {
-                    SendMessage(InternalClient, $"{HttpVersion} 511 Network Authentication Required\r\n\r\n");
+                    SendMessage(internalClient, $"{httpVersion} 511 Network Authentication Required\r\n\r\n");
                 }
                 catch
                 {
-                    SendMessage(InternalClient, $"{HttpVersion} 408 Request Timeout\r\n\r\n");
+                    SendMessage(internalClient, $"{httpVersion} 408 Request Timeout\r\n\r\n");
                 }
             }
         }
 
-        private void Relay(Socket Source, Socket Target, bool IsTarget)
+        private void Relay(Socket source, Socket target, bool isTarget)
         {
             try
             {
-                if (!IsTarget)
-                    Task.Run(() => Relay(Target, Source, true));
+                if (!isTarget)
+                    Task.Run(() => Relay(target, source, true));
 
                 while (true)
                 {
-                    byte[] Buffer = new byte[8192];
+                    byte[] buffer = new byte[8192];
 
-                    int Read = Source.Receive(Buffer, 0, Buffer.Length, SocketFlags.None);
+                    int read = source.Receive(buffer, 0, buffer.Length, SocketFlags.None);
 
-                    if (Read == 0)
+                    if (read == 0)
                         break;
 
-                    Target.Send(Buffer, 0, Read, SocketFlags.None);
+                    target.Send(buffer, 0, read, SocketFlags.None);
                 }
             }
             catch
@@ -245,129 +245,129 @@ namespace Yove.Proxy
             }
         }
 
-        private async Task<SocketError> SendSocks4(Socket Socket, string DestinationHost, int DestinationPort)
+        private async Task<SocketError> SendSocks4(Socket socket, string destinationHost, int destinationPort)
         {
-            byte AddressType = GetAddressType(DestinationHost);
+            byte addressType = GetAddressType(destinationHost);
 
-            if (AddressType == AddressTypeDomainName)
-                DestinationHost = GetHost(DestinationHost).ToString();
+            if (addressType == AddressTypeDomainName)
+                destinationHost = GetHost(destinationHost).ToString();
 
-            byte[] Address = GetIPAddressBytes(DestinationHost);
-            byte[] Port = GetPortBytes(DestinationPort);
-            byte[] UserId = string.IsNullOrEmpty(Username) ? new byte[0] : Encoding.ASCII.GetBytes(Username);
+            byte[] address = GetIPAddressBytes(destinationHost);
+            byte[] port = GetPortBytes(destinationPort);
+            byte[] userId = string.IsNullOrEmpty(_username) ? new byte[0] : Encoding.ASCII.GetBytes(_username);
 
-            byte[] Request = new byte[9 + UserId.Length];
+            byte[] request = new byte[9 + userId.Length];
 
-            Request[0] = (byte)SocksVersion;
-            Request[1] = 0x01;
-            Address.CopyTo(Request, 4);
-            Port.CopyTo(Request, 2);
-            UserId.CopyTo(Request, 8);
-            Request[8 + UserId.Length] = 0x00;
+            request[0] = (byte)_socksVersion;
+            request[1] = 0x01;
+            address.CopyTo(request, 4);
+            port.CopyTo(request, 2);
+            userId.CopyTo(request, 8);
+            request[8 + userId.Length] = 0x00;
 
-            byte[] Response = new byte[8];
+            byte[] response = new byte[8];
 
-            Socket.Send(Request);
+            socket.Send(request);
 
-            await WaitStream(Socket);
+            await WaitStream(socket);
 
-            Socket.Receive(Response);
+            socket.Receive(response);
 
-            if (Response[1] != 0x5a)
+            if (response[1] != 0x5a)
                 return SocketError.ConnectionRefused;
 
             return SocketError.Success;
         }
 
-        private async Task<SocketError> SendSocks5(Socket Socket, string DestinationHost, int DestinationPort)
+        private async Task<SocketError> SendSocks5(Socket socket, string destinationHost, int destinationPort)
         {
-            byte[] Response = new byte[255];
+            byte[] response = new byte[255];
 
-            byte[] Auth = new byte[3];
-            Auth[0] = (byte)SocksVersion;
-            Auth[1] = (byte)1;
+            byte[] auth = new byte[3];
+            auth[0] = (byte)_socksVersion;
+            auth[1] = (byte)1;
 
-            if (!string.IsNullOrEmpty(Username) && !string.IsNullOrEmpty(Password))
-                Auth[2] = 0x02;
+            if (!string.IsNullOrEmpty(_username) && !string.IsNullOrEmpty(_password))
+                auth[2] = 0x02;
             else
-                Auth[2] = (byte)0;
+                auth[2] = (byte)0;
 
-            Socket.Send(Auth);
+            socket.Send(auth);
 
-            await WaitStream(Socket);
+            await WaitStream(socket);
 
-            Socket.Receive(Response);
+            socket.Receive(response);
 
-            if (Response[1] == 0x02)
-                await SendAuth(Socket);
-            else if (Response[1] != 0x00)
+            if (response[1] == 0x02)
+                await SendAuth(socket);
+            else if (response[1] != 0x00)
                 return SocketError.ConnectionRefused;
 
-            byte AddressType = GetAddressType(DestinationHost);
+            byte addressType = GetAddressType(destinationHost);
 
-            if (AddressType == AddressTypeDomainName)
-                DestinationHost = GetHost(DestinationHost).ToString();
+            if (addressType == AddressTypeDomainName)
+                destinationHost = GetHost(destinationHost).ToString();
 
-            byte[] Address = GetAddressBytes(AddressType, DestinationHost);
-            byte[] Port = GetPortBytes(DestinationPort);
+            byte[] address = GetAddressBytes(addressType, destinationHost);
+            byte[] port = GetPortBytes(destinationPort);
 
-            byte[] Request = new byte[4 + Address.Length + 2];
+            byte[] request = new byte[4 + address.Length + 2];
 
-            Request[0] = (byte)SocksVersion;
-            Request[1] = 0x01;
-            Request[2] = 0x00;
-            Request[3] = AddressType;
+            request[0] = (byte)_socksVersion;
+            request[1] = 0x01;
+            request[2] = 0x00;
+            request[3] = addressType;
 
-            Address.CopyTo(Request, 4);
-            Port.CopyTo(Request, 4 + Address.Length);
+            address.CopyTo(request, 4);
+            port.CopyTo(request, 4 + address.Length);
 
-            Socket.Send(Request);
+            socket.Send(request);
 
-            await WaitStream(Socket);
+            await WaitStream(socket);
 
-            Socket.Receive(Response);
+            socket.Receive(response);
 
-            if (Response[1] != 0x00)
+            if (response[1] != 0x00)
                 return SocketError.ConnectionRefused;
 
             return SocketError.Success;
         }
 
-        private async Task SendAuth(Socket Socket)
+        private async Task SendAuth(Socket socket)
         {
-            byte[] Uname = Encoding.ASCII.GetBytes(Username);
-            byte[] Passwd = Encoding.ASCII.GetBytes(Password);
+            byte[] username = Encoding.ASCII.GetBytes(_username);
+            byte[] password = Encoding.ASCII.GetBytes(_password);
 
-            byte[] Request = new byte[Uname.Length + Passwd.Length + 3];
+            byte[] request = new byte[username.Length + password.Length + 3];
 
-            Request[0] = 1;
-            Request[1] = (byte)Uname.Length;
-            Uname.CopyTo(Request, 2);
-            Request[2 + Uname.Length] = (byte)Passwd.Length;
-            Passwd.CopyTo(Request, 3 + Uname.Length);
+            request[0] = 1;
+            request[1] = (byte)username.Length;
+            username.CopyTo(request, 2);
+            request[2 + username.Length] = (byte)password.Length;
+            password.CopyTo(request, 3 + username.Length);
 
-            Socket.Send(Request);
+            socket.Send(request);
 
-            byte[] Response = new byte[2];
+            byte[] response = new byte[2];
 
-            await WaitStream(Socket);
+            await WaitStream(socket);
 
-            Socket.Receive(Response);
+            socket.Receive(response);
 
-            if (Response[1] != 0x00)
+            if (response[1] != 0x00)
                 throw new AuthenticationException();
         }
 
-        private async Task WaitStream(Socket Socket)
+        private async Task WaitStream(Socket socket)
         {
-            int Sleep = 0;
-            int Delay = (Socket.ReceiveTimeout < 10) ? 10 : Socket.ReceiveTimeout;
+            int sleep = 0;
+            int delay = (socket.ReceiveTimeout < 10) ? 10 : socket.ReceiveTimeout;
 
-            while (Socket.Available == 0)
+            while (socket.Available == 0)
             {
-                if (Sleep < Delay)
+                if (sleep < delay)
                 {
-                    Sleep += 10;
+                    sleep += 10;
                     await Task.Delay(10);
 
                     continue;
@@ -377,43 +377,43 @@ namespace Yove.Proxy
             }
         }
 
-        private void SendMessage(Socket Client, string Message)
+        private void SendMessage(Socket client, string message)
         {
-            Client.Send(Encoding.UTF8.GetBytes(Message));
+            client.Send(Encoding.UTF8.GetBytes(message));
         }
 
-        private IPAddress GetHost(string Host)
+        private IPAddress GetHost(string host)
         {
-            if (IPAddress.TryParse(Host, out IPAddress Ip))
-                return Ip;
+            if (IPAddress.TryParse(host, out IPAddress ip))
+                return ip;
 
-            return Dns.GetHostAddresses(Host)[0];
+            return Dns.GetHostAddresses(host)[0];
         }
 
-        private byte[] GetAddressBytes(byte AddressType, string Host)
+        private byte[] GetAddressBytes(byte addressType, string host)
         {
-            switch (AddressType)
+            switch (addressType)
             {
                 case AddressTypeIPV4:
                 case AddressTypeIPV6:
-                    return IPAddress.Parse(Host).GetAddressBytes();
+                    return IPAddress.Parse(host).GetAddressBytes();
                 case AddressTypeDomainName:
-                    byte[] Bytes = new byte[Host.Length + 1];
+                    byte[] bytes = new byte[host.Length + 1];
 
-                    Bytes[0] = (byte)Host.Length;
-                    Encoding.ASCII.GetBytes(Host).CopyTo(Bytes, 1);
+                    bytes[0] = (byte)host.Length;
+                    Encoding.ASCII.GetBytes(host).CopyTo(bytes, 1);
 
-                    return Bytes;
+                    return bytes;
                 default:
                     return null;
             }
         }
 
-        private byte GetAddressType(string Host)
+        private byte GetAddressType(string host)
         {
-            if (IPAddress.TryParse(Host, out IPAddress Ip))
+            if (IPAddress.TryParse(host, out IPAddress ip))
             {
-                if (Ip.AddressFamily == AddressFamily.InterNetwork)
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
                     return AddressTypeIPV4;
 
                 return AddressTypeIPV6;
@@ -422,29 +422,29 @@ namespace Yove.Proxy
             return AddressTypeDomainName;
         }
 
-        private byte[] GetIPAddressBytes(string DestinationHost)
+        private byte[] GetIPAddressBytes(string destinationHost)
         {
-            IPAddress Address = null;
+            IPAddress address = null;
 
-            if (!IPAddress.TryParse(DestinationHost, out Address))
+            if (!IPAddress.TryParse(destinationHost, out address))
             {
-                IPAddress[] IPs = Dns.GetHostAddresses(DestinationHost);
+                IPAddress[] ips = Dns.GetHostAddresses(destinationHost);
 
-                if (IPs.Length > 0)
-                    Address = IPs[0];
+                if (ips.Length > 0)
+                    address = ips[0];
             }
 
-            return Address.GetAddressBytes();
+            return address.GetAddressBytes();
         }
 
-        private byte[] GetPortBytes(int Port)
+        private byte[] GetPortBytes(int port)
         {
-            byte[] ArrayBytes = new byte[2];
+            byte[] arrayBytes = new byte[2];
 
-            ArrayBytes[0] = (byte)(Port / 256);
-            ArrayBytes[1] = (byte)(Port % 256);
+            arrayBytes[0] = (byte)(port / 256);
+            arrayBytes[1] = (byte)(port % 256);
 
-            return ArrayBytes;
+            return arrayBytes;
         }
 
         public void Dispose()
@@ -453,12 +453,12 @@ namespace Yove.Proxy
             {
                 IsDisposed = true;
 
-                if (InternalServer != null && InternalServer.Connected)
-                    InternalServer.Disconnect(false);
+                if (_internalServer != null && _internalServer.Connected)
+                    _internalServer.Disconnect(false);
 
-                InternalServer?.Dispose();
+                _internalServer?.Dispose();
 
-                InternalServer = null;
+                _internalServer = null;
             }
         }
 

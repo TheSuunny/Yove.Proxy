@@ -21,45 +21,45 @@ dotnet add package Yove.Proxy
 # Example
 
 ```csharp
-new ProxyClient("138.68.161.60", 1080, ProxyType.Socks5);
-new ProxyClient("138.68.161.60:1080", ProxyType.Socks5);
-new ProxyClient("138.68.161.60:1080", "UserID / Username", ProxyType.Socks4);
-new ProxyClient("138.68.161.60:1080", "Username", "Password", ProxyType.Socks5);
+ProxyClient proxy = new ProxyClient("138.68.161.60", 1080, ProxyType.Socks5);
+ProxyClient proxy = new ProxyClient("138.68.161.60:1080", ProxyType.Socks5);
+ProxyClient proxy = new ProxyClient("138.68.161.60:1080", "UserID / Username", ProxyType.Socks4);
+ProxyClient proxy = new ProxyClient("138.68.161.60:1080", "Username", "Password", ProxyType.Socks5);
 ```
 
 ### WebSocket
 
 ```csharp
-using (ProxyClient Proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Socks5)
+using (ProxyClient proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Socks5)
 {
     ReadWriteTimeOut = 10000
 })
 {
-    ClientWebSocket WebSocket = new ClientWebSocket
+    ClientWebSocket webSocket = new ClientWebSocket
     {
-        Options.Proxy = Proxy
+        Options.Proxy = proxy
     };
 
-    await WebSocket.ConnectAsync(new Uri("wss://echo.websocket.org"), TokenSource.Token);
+    await webSocket.ConnectAsync(new Uri("wss://echo.websocket.org"), TokenSource.Token);
 }
 ```
 
 ### HttpClient
 
 ```csharp
-using (ProxyClient Proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Socks4)
+using (ProxyClient proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Socks4)
 {
     ReadWriteTimeOut = 10000
 })
 {
-    HttpClientHandler Handler = new HttpClientHandler { Proxy = Proxy };
-    HttpClient Client = new HttpClient(Handler);
+    HttpClientHandler handler = new HttpClientHandler { Proxy = proxy };
+    HttpClient client = new HttpClient(handler);
 
     try
     {
-        string Response = await Client.GetStringAsync("https://api.ipify.org/?format=json");
+        string response = await client.GetStringAsync("https://api.ipify.org/?format=json");
 
-        Console.WriteLine(Response);
+        Console.WriteLine(response);
     }
     catch (Exception ex)
     {
@@ -67,8 +67,8 @@ using (ProxyClient Proxy = new ProxyClient("36.67.195.34", 57456, ProxyType.Sock
     }
     finally
     {
-        Handler.Dispose();
-        Client.Dispose();
+        handler.Dispose();
+        client.Dispose();
     }
 }
 ```
